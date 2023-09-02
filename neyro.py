@@ -1,43 +1,58 @@
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
 
-# Создаем список уведомлений
-notifications = [
-    "У вас новое сообщение!",
-    "Проверьте свою электронную почту",
-    "Вам необходимо подтвердить свой аккаунт",
-    "Ваш заказ отправлен",
-    "Вы выиграли скидку на следующую покупку",
-    # Добавьте сюда остальные тексты уведомлений
-]
+# Завантаження даних для тренування мікронейронної мережі
+data = open('topSubscribed.csv', 'r').read()
+chars = list(set(data))
+char_to_num = {char: num for num, char in enumerate(chars)}
 
-# Создаем функцию для кодирования уведомлений в числовые векторы
-def encode_notification(notification):
-    return [ord(c) for c in notification]
+# Параметри мікронейронної мережі
+num_epochs = 50
+batch_size = 128
+seq_length = 100
+learning_rate = 0.01
+vocab_size = len(chars)
 
-# Создаем функцию для декодирования числовых векторов в уведомления
-def decode_notification(encoded_notification):
-    return ''.join([chr(int(x)) for x in encoded_notification])
-
-# Создаем случайный вектор, который будет использоваться для генерации уведомлений
-random_vector = tf.random.uniform(shape=[1, 1000])
-
-# Создаем модель нейронной сети с одним скрытым слоем
+# Створення моделі мікронейронної мережі
 model = tf.keras.Sequential([
-    tf.keras.layers.Dense(units=100, activation='relu', input_shape=[1000]),
-    tf.keras.layers.Dense(units=len(notifications), activation='softmax')
+    tf.keras.layers.Embedding(vocab_size, 256, batch_input_shape=[batch_size, None]),
+    tf.keras.layers.LSTM(1024, return_sequences=True, stateful=True, recurrent_initializer='glorot_uniform'),
+    tf.keras.layers.Dense(vocab_size)
 ])
 
-# Компилируем модель с категориальной кросс-энтропийной функцией потерь
-model.compile(optimizer='adam', loss='categorical_crossentropy')
+# Компіляція моделі мікронейронної мережі
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+              loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True))
 
-# Обучаем модель на случайном векторе
-model.fit(random_vector, tf.keras.utils.to_categorical(np.random.randint(len(notifications), size=1), num_classes=len(notifications)))
+# Функція для генерації тексту за допомогою мікронейронної мережі
+def generate_text(model, start_string):
+    # Кількість символів для генерації
+    num_generate = 1000
 
-# Генерируем случайный вектор и предсказываем уведомление на основе него
-random_vector = tf.random.uniform(shape=[1, 1000])
-predicted_index = np.argmax(model.predict(random_vector))
-predicted_notification = notifications[predicted_index]
+    # Конвертуємо початковий текст в числове представлення
+    input_eval = [char_to_num[char] for char in start_string]
+    input_eval = tf.expand_dims(input_eval, 0)
 
-# Выводим результат
-print(predicted_notification)
+    # Зберігаємо згенерований текст
+    generated_text = []
+
+    # Генерація тексту
+    model.reset_states()
+    for i in range(num_generate):
+        predictions = model(input_eval)
+        predictions = tf.squeeze(predictions, 0)
+        predicted_id = tf.random.categorical(predictions, num_samples=1)[-1, 0].numpy()
+
+        # Додаємо вихідний символ до згенерованого тексту
+        generated_text.append(chars[predicted_id])
+
+        # Використовуємо останній згенерований символ як вхід до наступного виклику моделі
+        input_eval = tf.expand_dims([predicted_id], 0)
+
+    return (start_string + ''.join(generated_text))
+
+# Тренування мікронейронної мережі
+for epoch in range(num_epochs):
+    # Розбиваємо дані на пакети
+    chunks = tf.data.Dataset.from_tensor_slices(data_as_int).batch(batch_size, drop_remainder=True)
+
